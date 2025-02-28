@@ -4,9 +4,10 @@ from pyrogram.types import Message
 from PIL import Image
 
 # Telegram API credentials
-API_ID = "YOUR_API_ID"
-API_HASH = "YOUR_API_HASH"
-BOT_TOKEN = "YOUR_BOT_TOKEN"
+API_ID = 25610561  # Replace with your API ID
+API_HASH = "ac97589bbeca18455740fef152198007"  # Replace with your API Hash
+BOT_TOKEN = "8095413587:AAH4i3e4sNmOpLP1fV9idIVu0mEN_2wOAZs"  # Replace with your Bot Token
+
 
 # Create bot client
 app = Client("thumbnail_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
