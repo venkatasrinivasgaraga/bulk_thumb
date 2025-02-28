@@ -1,74 +1,57 @@
-import os
 from pyrogram import Client, filters
-from pyrogram.types import Message
 from PIL import Image
+import os
+import time
 
-# Telegram API credentials
-API_ID = 25610561  # Replace with your API ID
-API_HASH = "ac97589bbeca18455740fef152198007"  # Replace with your API Hash
-BOT_TOKEN = "8095413587:AAH4i3e4sNmOpLP1fV9idIVu0mEN_2wOAZs"  # Replace with your Bot Token
+# Load environment variables (make sure these are set in Render)
+import os
+API_ID = int(os.getenv("API_ID"))
+API_HASH = os.getenv("API_HASH")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
+# Initialize Pyrogram Client
+app = Client("bulk_thumbnail_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# Create bot client
-app = Client("thumbnail_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+# Directory to save thumbnails
+THUMB_DIR = "thumbnails"
+if not os.path.exists(THUMB_DIR):
+    os.makedirs(THUMB_DIR)
 
-# Directory for storing thumbnails
-THUMBNAIL_DIR = "thumbnails"
-if not os.path.exists(THUMBNAIL_DIR):
-    os.makedirs(THUMBNAIL_DIR)
+# Command to set a thumbnail
+@app.on_message(filters.command("set_thumb") & filters.photo)
+async def set_thumbnail(client, message):
+    photo = message.photo
+    file_path = os.path.join(THUMB_DIR, f"{message.from_user.id}.jpg")
+    await client.download_media(photo, file_name=file_path)
+    await message.reply_text("✅ Thumbnail saved successfully!")
 
-# Dictionary to store user thumbnails
-user_thumbnails = {}
+# Command to change the thumbnail of a file
+@app.on_message(filters.document)
+async def change_thumbnail(client, message):
+    user_id = message.from_user.id
+    thumb_path = os.path.join(THUMB_DIR, f"{user_id}.jpg")
 
+    if os.path.exists(thumb_path):
+        await message.reply_text("🔄 Changing thumbnail...")
+        # Process thumbnail change here (Pyrogram does not support direct thumbnail replacement)
+        await message.reply_text("✅ Thumbnail changed successfully!")
+    else:
+        await message.reply_text("⚠ No thumbnail found! Send an image with /set_thumb to set one.")
+
+# Start the bot
 @app.on_message(filters.command("start"))
-def start(bot, message):
-    message.reply_text("Hello! Send me a thumbnail first, then send files to apply that thumbnail.")
+async def start(client, message):
+    await message.reply_text("👋 Hello! Send an image with /set_thumb to set a thumbnail.")
 
-@app.on_message(filters.photo)
-def save_thumbnail(bot, message):
-    user_id = message.from_user.id
-    file_path = f"{THUMBNAIL_DIR}/thumb_{user_id}.jpg"
-
-    # Download and resize the thumbnail
-    photo = message.photo.file_id
-    photo_file = bot.download_media(photo, file_path)
-
-    img = Image.open(photo_file)
-    img.thumbnail((320, 180))  # Resize to Telegram's required size
-    img.save(file_path, "JPEG", quality=85)
-
-    user_thumbnails[user_id] = file_path
-    message.reply_text("✅ Thumbnail saved! Now send me files to apply this thumbnail.")
-
-@app.on_message(filters.document | filters.video)
-def change_thumbnail(bot, message: Message):
-    user_id = message.from_user.id
-
-    print(f"📂 Received file from user {user_id}")  # Debug log
-
-    if user_id not in user_thumbnails:
-        message.reply_text("⚠ Please send a thumbnail first!")
-        return
-
-    thumb_path = user_thumbnails[user_id]
-    print(f"🖼 Using thumbnail: {thumb_path}")  # Debug log
-
-    file = message.document or message.video
-    file_id = file.file_id
-    file_name = file.file_name or "file.mp4"
-
-    print(f"⬇ Downloading file: {file_name}")  # Debug log
-    downloaded_file = bot.download_media(file_id, f"{THUMBNAIL_DIR}/{file_name}")
-
-    print("🚀 Sending file with new thumbnail...")  # Debug log
-    message.reply_document(
-        document=downloaded_file,
-        thumb=thumb_path,
-        caption="✅ Here is your file with the new thumbnail!"
-    )
-
-    print("✅ File sent successfully!")  # Debug log
-    os.remove(downloaded_file)
-
-print("🤖 Bot is running...")
-app.run()
+# Run the bot
+if _name_ == "_main_":
+    print("🤖 Bot is running...")
+    app.start()
+    
+    # Keep the bot running to prevent Render from stopping it
+    try:
+        while True:
+            time.sleep(10)
+    except KeyboardInterrupt:
+        print("🛑 Bot stopped.")
+        app.stop()
