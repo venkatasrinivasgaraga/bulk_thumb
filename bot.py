@@ -5,107 +5,115 @@ from flask import Flask
 from threading import Thread
 
 # Load environment variables
-API_ID = os.getenv("API_ID")
+API_ID = int(os.getenv("API_ID", "0"))
 API_HASH = os.getenv("API_HASH")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-DEFAULT_KEYWORD = "@Animes2u"  # Custom keyword added at the beginning of filenames
+DEFAULT_KEYWORD = "@Animes2u - "
 
 # Ensure required environment variables are set
 if not API_ID or not API_HASH or not BOT_TOKEN:
-    raise ValueError("❌ Missing required environment variables: API_ID, API_HASH, or BOT_TOKEN.")
+    raise ValueError("❌ Missing API_ID, API_HASH, or BOT_TOKEN.")
 
-API_ID = int(API_ID)  # Convert API_ID to int
-
-# Initialize Pyrogram Client
+# Initialize Pyrogram Bot
 bot = Client("bulk_thumbnail_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# Flask app to keep the bot alive
+# Flask app for web hosting (keep the bot alive)
 web_app = Flask(__name__)
 
 @web_app.route('/')
 def home():
     return "🤖 Bot is running!"
 
-# Directory to save thumbnails
+# Directory for storing user thumbnails
 THUMB_DIR = "thumbnails"
 os.makedirs(THUMB_DIR, exist_ok=True)
 
-# Command to set a thumbnail
+# ✅ Set Thumbnail Command
 @bot.on_message(filters.command("set_thumb") & filters.photo)
 async def set_thumbnail(client, message):
     file_path = os.path.join(THUMB_DIR, f"{message.from_user.id}.jpg")
     await client.download_media(message.photo, file_name=file_path)
     await message.reply_text("✅ Thumbnail saved successfully!")
 
-# Command to change the thumbnail of a file and rename it
+# ✅ File Rename & Thumbnail Change
 @bot.on_message(filters.document)
 async def change_thumbnail(client, message):
     thumb_path = os.path.join(THUMB_DIR, f"{message.from_user.id}.jpg")
 
+    # Check if thumbnail exists
     if not os.path.exists(thumb_path):
-        await message.reply_text("⚠️ No thumbnail found! Send an image with /set_thumb to set one.")
+        await message.reply_text("⚠️ No thumbnail found! Use /set_thumb to set one.")
         return
 
-    await message.reply_text("🔄 Changing thumbnail and renaming file...")
+    # Check file size (max 2GB limit for normal users)
+    file_size = message.document.file_size
+    max_size = 2 * 1024 * 1024 * 1024  # 2GB
+
+    if file_size > max_size:
+        await message.reply_text("❌ File is too large (Max: 2GB).")
+        return
+
+    await message.reply_text("🔄 Processing file...")
 
     # Download the document
-    file_path = await message.download()
+    file_path = await client.download_media(message)
 
     if not file_path:
         await message.reply_text("❌ Failed to download file.")
         return
 
-    # Extract original filename and extension
-    original_filename = message.document.file_name
-    file_name, file_ext = os.path.splitext(original_filename)
-
-    # Ensure the default keyword is at the beginning
+    # Extract filename & ensure the keyword is present
+    file_name, file_ext = os.path.splitext(message.document.file_name)
     if not file_name.startswith(DEFAULT_KEYWORD):
         new_filename = f"{DEFAULT_KEYWORD} {file_name}{file_ext}"
     else:
         new_filename = f"{file_name}{file_ext}"
 
     try:
-        # Send the document with the new filename and thumbnail
+        # Send renamed file with thumbnail
         await client.send_document(
             chat_id=message.chat.id,
             document=file_path,
-            thumb=thumb_path,  # Attach the new thumbnail
+            thumb=thumb_path,
             file_name=new_filename,
-            caption=f"✅ File renamed and thumbnail changed: {new_filename}",
+            caption=f"✅ Renamed: {new_filename}",
         )
         await message.reply_text("✅ Done! Here is your updated file.")
-    except Exception as e:
-        await message.reply_text(f"❌ Failed to change thumbnail: {e}")
 
-# Start command
+        # ✅ Delete temp file to free space
+        os.remove(file_path)
+
+    except Exception as e:
+        await message.reply_text(f"❌ Error: {e}")
+
+# ✅ Start Command
 @bot.on_message(filters.command("start"))
 async def start(client, message):
     await message.reply_text(
-        "👋 Hello! Send an image with /set_thumb to set a thumbnail, then send a file to rename and change its thumbnail."
+        "👋 Hello! Send an image with /set_thumb to set a thumbnail, then send a file to rename & change its thumbnail."
     )
 
-# Function to run Flask in a separate thread
+# Run Flask in a separate thread
 def run_flask():
-    port = int(os.environ.get("PORT", 8080))  # Render assigns a dynamic port
-    print(f"🌍 Starting Flask server on port {port}...")
+    port = int(os.environ.get("PORT", 8080))
+    print(f"🌍 Starting Flask on port {port}...")
     web_app.run(host="0.0.0.0", port=port)
 
 if __name__ == "__main__":
     print("🤖 Bot is starting...")
 
-    # Start Flask server in a separate thread
+    # Start Flask server
     flask_thread = Thread(target=run_flask, daemon=True)
     flask_thread.start()
 
-    # Start Pyrogram bot
+    # Start Telegram Bot
     try:
         bot.start()
-        print("✅ Bot is online and ready to receive commands.")
+        print("✅ Bot is online.")
     except Exception as e:
-        print(f"❌ Failed to start bot: {e}")
+        print(f"❌ Bot startup failed: {e}")
 
-    # Keep bot running and listening to messages
+    # Keep bot running
     idle()
 
     print("🛑 Bot stopped.")
