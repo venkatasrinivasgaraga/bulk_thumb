@@ -1,12 +1,9 @@
 from pyrogram import Client, filters, idle
-from pyrogram.types import InputMediaDocument
-from PIL import Image
 import os
-import asyncio
 from flask import Flask
 from threading import Thread
 
-# Load environment variables (Set these in Render)
+# Load environment variables
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -36,26 +33,31 @@ async def set_thumbnail(client, message):
 @app.on_message(filters.document)
 async def change_thumbnail(client, message):
     thumb_path = os.path.join(THUMB_DIR, f"{message.from_user.id}.jpg")
-    
-    if os.path.exists(thumb_path):
-        await message.reply_text("🔄 Changing thumbnail...")
 
-        # Download the document
-        file_path = await message.download()
-        
-        # Apply the new thumbnail and send the file back
-        try:
-            await client.send_document(
-                chat_id=message.chat.id,
-                document=file_path,
-                thumb=thumb_path,  # Attaching the new thumbnail
-                caption=f"✅ Thumbnail changed successfully: {message.document.file_name}",
-            )
-            await message.reply_text("✅ Done! Here is your updated file.")
-        except Exception as e:
-            await message.reply_text(f"❌ Failed to change thumbnail: {e}")
-    else:
+    if not os.path.exists(thumb_path):
         await message.reply_text("⚠️ No thumbnail found! Send an image with /set_thumb to set one.")
+        return
+
+    await message.reply_text("🔄 Changing thumbnail...")
+
+    # Download the document
+    file_path = await message.download()
+    
+    if not file_path:
+        await message.reply_text("❌ Failed to download file.")
+        return
+    
+    try:
+        # Send the document with the new thumbnail
+        await client.send_document(
+            chat_id=message.chat.id,
+            document=file_path,
+            thumb=thumb_path,  # Attach the new thumbnail
+            caption=f"✅ Thumbnail changed: {message.document.file_name}",
+        )
+        await message.reply_text("✅ Done! Here is your updated file.")
+    except Exception as e:
+        await message.reply_text(f"❌ Failed to change thumbnail: {e}")
 
 # Start command
 @app.on_message(filters.command("start"))
