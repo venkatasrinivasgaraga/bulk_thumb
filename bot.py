@@ -1,14 +1,23 @@
 from pyrogram import Client, filters, idle
 from PIL import Image
 import os
-import asyncio
+import logging
 from flask import Flask
 from threading import Thread
 
-# Load environment variables (Set these in Render)
-API_ID = int(os.getenv("API_ID"))
-API_HASH = os.getenv("API_HASH")
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+# Enable logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Load environment variables (Set these in Render, Koyeb, or Railway)
+API_ID = int(os.getenv("API_ID", "0"))
+API_HASH = os.getenv("API_HASH", "")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+
+# Validate environment variables
+if not API_ID or not API_HASH or not BOT_TOKEN:
+    logger.error("❌ Missing API_ID, API_HASH, or BOT_TOKEN. Set them in environment variables!")
+    exit(1)
 
 # Initialize Pyrogram Client
 app = Client("bulk_thumbnail_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
@@ -16,9 +25,9 @@ app = Client("bulk_thumbnail_bot", api_id=API_ID, api_hash=API_HASH, bot_token=B
 # Flask app to keep Render alive
 web_app = Flask(__name__)
 
-@web_app.route('/')
+@web_app.route("/")
 def home():
-    return "Bot is running!"
+    return "✅ Bot is running!"
 
 # Directory to save thumbnails
 THUMB_DIR = "thumbnails"
@@ -28,8 +37,14 @@ os.makedirs(THUMB_DIR, exist_ok=True)
 @app.on_message(filters.command("set_thumb") & filters.photo)
 async def set_thumbnail(client, message):
     file_path = os.path.join(THUMB_DIR, f"{message.from_user.id}.jpg")
-    await client.download_media(message.photo, file_name=file_path)
-    await message.reply_text("✅ Thumbnail saved successfully!")
+    
+    try:
+        await client.download_media(message.photo, file_name=file_path)
+        await message.reply_text("✅ Thumbnail saved successfully!")
+        logger.info(f"Thumbnail saved for user {message.from_user.id}")
+    except Exception as e:
+        logger.error(f"❌ Error saving thumbnail: {e}")
+        await message.reply_text("⚠️ Failed to save thumbnail!")
 
 # Command to change the thumbnail of a file
 @app.on_message(filters.document)
@@ -38,7 +53,9 @@ async def change_thumbnail(client, message):
     
     if os.path.exists(thumb_path):
         await message.reply_text("🔄 Changing thumbnail...")
-        # Processing logic here (if needed)
+        
+        # Here you can add any processing logic for changing the thumbnail
+        
         await message.reply_text("✅ Thumbnail changed successfully!")
     else:
         await message.reply_text("⚠️ No thumbnail found! Send an image with /set_thumb to set one.")
@@ -50,22 +67,23 @@ async def start(client, message):
 
 # Run Flask in a separate thread
 def run_flask():
-    port = int(os.environ.get("PORT", 8080))
+    port = int(os.getenv("PORT", 8080))
     web_app.run(host="0.0.0.0", port=port)
 
 if __name__ == "__main__":
-    print("🤖 Bot is starting...")
+    logger.info("🤖 Bot is starting...")
 
     # Start Flask server in a separate thread
     flask_thread = Thread(target=run_flask, daemon=True)
     flask_thread.start()
 
     # Start Pyrogram bot
-    app.start()
-    print("✅ Bot is online and ready to receive commands.")
-
-    # Keep bot running and listening to messages
-    idle()
-
-    print("🛑 Bot stopped.")
-    app.stop()
+    try:
+        app.start()
+        logger.info("✅ Bot is online and ready to receive commands.")
+        idle()  # Keep the bot running
+    except Exception as e:
+        logger.error(f"❌ Error starting the bot: {e}")
+    finally:
+        app.stop()
+        logger.info("🛑 Bot stopped.")
