@@ -3,8 +3,7 @@ from PIL import Image
 import os
 import time
 
-# Load environment variables (make sure these are set in Render)
-import os
+# Load environment variables (Set these in Render's Environment Variables section)
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -36,7 +35,7 @@ async def change_thumbnail(client, message):
         # Process thumbnail change here (Pyrogram does not support direct thumbnail replacement)
         await message.reply_text("✅ Thumbnail changed successfully!")
     else:
-        await message.reply_text("⚠ No thumbnail found! Send an image with /set_thumb to set one.")
+        await message.reply_text("⚠️ No thumbnail found! Send an image with /set_thumb to set one.")
 
 # Start the bot
 @app.on_message(filters.command("start"))
@@ -44,7 +43,7 @@ async def start(client, message):
     await message.reply_text("👋 Hello! Send an image with /set_thumb to set a thumbnail.")
 
 # Run the bot
-if _name_ == "_main_":
+if __name__ == "__main__":
     print("🤖 Bot is running...")
     app.start()
     
