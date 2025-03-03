@@ -19,7 +19,7 @@ if not API_ID or not API_HASH or not BOT_TOKEN:
 # Initialize Pyrogram Bot
 bot = Client("rename_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# Flask app for web hosting (keep bot alive on Render)
+# Flask app for web hosting (keep bot alive)
 web_app = Flask(__name__)
 
 @web_app.route('/')
@@ -96,7 +96,7 @@ async def keep_alive():
 
 # Run Flask in a separate thread
 def run_flask():
-    port = int(os.environ.get("PORT", 8080))
+    port = int(os.environ.get("PORT", 10000))  # Render assigns a dynamic port
     print(f"🌍 Starting Flask on port {port}...")
     web_app.run(host="0.0.0.0", port=port)
 
@@ -115,6 +115,11 @@ async def main():
 
     print("🛑 Bot stopped.")
 
-# Run the bot
+# ✅ Fix Event Loop Issue for Render
 if __name__ == "__main__":
-    asyncio.run(main())
+    import sys
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(main())
