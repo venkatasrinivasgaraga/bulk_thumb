@@ -1,5 +1,6 @@
 import os
 import asyncio
+import re
 from pyrogram import Client, filters, idle
 from flask import Flask
 from threading import Thread
@@ -8,7 +9,7 @@ from threading import Thread
 API_ID = int(os.getenv("API_ID", "0"))
 API_HASH = os.getenv("API_HASH")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-DEFAULT_KEYWORD = "@Animes2u - "
+DEFAULT_KEYWORD = "[@Animes2u] "
 
 # Ensure required environment variables are set
 if not API_ID or not API_HASH or not BOT_TOKEN:
@@ -62,26 +63,31 @@ async def change_thumbnail(client, message):
         await message.reply_text("❌ Failed to download file.")
         return
 
-    # Extract filename & ensure the keyword is present
+    # Extract filename & clean it
     file_name, file_ext = os.path.splitext(message.document.file_name)
-    if not file_name.startswith(DEFAULT_KEYWORD):
-        new_filename = f"{DEFAULT_KEYWORD} {file_name}{file_ext}"
-    else:
-        new_filename = f"{file_name}{file_ext}"
+
+    # Remove anything inside brackets [ ] and any word starting with '@'
+    file_name = re.sub(r"\[.*?\]|\@\S+", "", file_name).strip()
+
+    # Ensure the filename starts with [@Animes2u]
+    new_filename = f"{DEFAULT_KEYWORD}{file_name}{file_ext}"
+    new_file_path = os.path.join(os.path.dirname(file_path), new_filename)
+
+    # Rename the downloaded file
+    os.rename(file_path, new_file_path)
 
     try:
-        # Send renamed file with thumbnail
+        # Send the renamed file with thumbnail
         await client.send_document(
             chat_id=message.chat.id,
-            document=file_path,
+            document=new_file_path,
             thumb=thumb_path,
             file_name=new_filename,
             caption=f"✅ Renamed: {new_filename}",
         )
-        await message.reply_text("✅ Done! Here is your updated file.")
 
-        # ✅ Delete temp file to free space
-        os.remove(file_path)
+        # ✅ Delete temp file after sending
+        os.remove(new_file_path)
 
     except Exception as e:
         await message.reply_text(f"❌ Error: {e}")
