@@ -1,131 +1,120 @@
 import os
 import re
-import json
-from pyrogram import Client, filters
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+import asyncio
+import requests
+from pyrogram import Client, filters, idle
+from flask import Flask
+from threading import Thread
 
-# Bot Configuration
-API_ID = "979826"
-API_HASH = "238183386c30590d073b457166ba260d"
-BOT_TOKEN = "7365620276:AAGuh0mvjHoY6_ZXhzsxaUA6NzIlzE3-0Mw"
+# Load environment variables
+API_ID = int(os.getenv("API_ID", "0"))
+API_HASH = os.getenv("API_HASH")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+DEFAULT_KEYWORD = "[@Animes2u] "
 
-# File to store user preferences
-USER_SETTINGS_FILE = "user_settings.json"
+# Ensure required environment variables are set
+if not API_ID or not API_HASH or not BOT_TOKEN:
+    raise ValueError("❌ Missing API_ID, API_HASH, or BOT_TOKEN.")
 
-# Load or initialize user settings
-if os.path.exists(USER_SETTINGS_FILE):
-    with open(USER_SETTINGS_FILE, "r") as f:
-        user_settings = json.load(f)
-else:
-    user_settings = {}
+# Initialize Pyrogram Bot
+bot = Client("rename_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# Initialize bot
-app = Client("FileRenameBot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+# Flask app for web hosting (keep bot alive on Render)
+web_app = Flask(__name__)
 
-# Function to rename files
-def rename_file(filename):
-    prefix = "[@Animes2u] "
-    
-    # Remove unwanted bracketed text except [E78], [720p]
-    cleaned_name = re.sub(r"(?!E\d+|\d+p)[^]+", "", filename)
+@web_app.route('/')
+def home():
+    return "🤖 Bot is running!"
 
-    # Remove @mentions (inside and outside brackets)
-    cleaned_name = re.sub(r"@\S+", "", cleaned_name).strip()
+# Directory for storing user thumbnails
+THUMB_DIR = "thumbnails"
+os.makedirs(THUMB_DIR, exist_ok=True)
 
-    # Ensure there's only one space between words
-    cleaned_name = re.sub(r"\s+", " ", cleaned_name).strip()
-
-    # Add prefix at the start
-    renamed_file = prefix + cleaned_name
-    return renamed_file
-
-# Start command
-@app.on_message(filters.command("start"))
-async def start_command(client, message):
-    await message.reply_text(
-        "Welcome to the File Rename Bot!\n\n"
-        "📌 Send me a file, and I will rename it automatically.\n"
-        "📌 Use /pause to stop renaming and /resume to enable it.\n"
-        "📌 Send /setthumb with an image to save a permanent thumbnail.\n"
-        "📌 Send /delthumb to delete the saved thumbnail.",
-        reply_markup=InlineKeyboardMarkup(
-            [[InlineKeyboardButton("Source Code", url="https://github.com")]]
-        ),
-    )
-
-# Pause renaming
-@app.on_message(filters.command("pause"))
-async def pause_renaming(client, message):
-    user_id = str(message.from_user.id)
-    user_settings[user_id] = user_settings.get(user_id, {})
-    user_settings[user_id]["paused"] = True
-    with open(USER_SETTINGS_FILE, "w") as f:
-        json.dump(user_settings, f)
-    await message.reply_text("✅ File renaming is now **paused**.")
-
-# Resume renaming
-@app.on_message(filters.command("resume"))
-async def resume_renaming(client, message):
-    user_id = str(message.from_user.id)
-    user_settings[user_id] = user_settings.get(user_id, {})
-    user_settings[user_id]["paused"] = False
-    with open(USER_SETTINGS_FILE, "w") as f:
-        json.dump(user_settings, f)
-    await message.reply_text("✅ File renaming is now **enabled**.")
-
-# Set permanent thumbnail
-@app.on_message(filters.command("setthumb") & filters.photo)
+# ✅ Set Thumbnail Command
+@bot.on_message(filters.command("set_thumb") & filters.photo)
 async def set_thumbnail(client, message):
-    user_id = str(message.from_user.id)
-    file_id = message.photo.file_id
-    user_settings[user_id] = user_settings.get(user_id, {})
-    user_settings[user_id]["thumbnail"] = file_id
-    with open(USER_SETTINGS_FILE, "w") as f:
-        json.dump(user_settings, f)
-    await message.reply_text("✅ Thumbnail has been **saved**.")
+    file_path = os.path.join(THUMB_DIR, f"{message.from_user.id}.jpg")
+    await client.download_media(message.photo, file_name=file_path)
+    await message.reply_text("✅ Thumbnail saved successfully!")
 
-# Delete saved thumbnail
-@app.on_message(filters.command("delthumb"))
-async def delete_thumbnail(client, message):
-    user_id = str(message.from_user.id)
-    if user_id in user_settings and "thumbnail" in user_settings[user_id]:
-        del user_settings[user_id]["thumbnail"]
-        with open(USER_SETTINGS_FILE, "w") as f:
-            json.dump(user_settings, f)
-        await message.reply_text("✅ Thumbnail has been **deleted**.")
-    else:
-        await message.reply_text("⚠️ No thumbnail was set.")
+# ✅ File Rename & Thumbnail Change
+@bot.on_message(filters.document)
+async def rename_file(client, message):
+    thumb_path = os.path.join(THUMB_DIR, f"{message.from_user.id}.jpg")
 
-# Handle file renaming
-@app.on_message(filters.document | filters.video)
-async def rename_and_send_file(client, message):
-    user_id = str(message.from_user.id)
-
-    # Check if renaming is paused
-    if user_id in user_settings and user_settings[user_id].get("paused", False):
-        await message.reply_text("⏸ File renaming is currently **paused**. Use /resume to enable it.")
+    # Check if thumbnail exists
+    if not os.path.exists(thumb_path):
+        await message.reply_text("⚠️ No thumbnail found! Use /set_thumb to set one.")
         return
 
-    # Get original file name
-    file_name = message.document.file_name if message.document else message.video.file_name
-    new_filename = rename_file(file_name)
+    # Download the document
+    file_path = await client.download_media(message)
+    if not file_path:
+        await message.reply_text("❌ Failed to download file.")
+        return
 
-    # Check if a thumbnail is set
-    thumb_id = user_settings.get(user_id, {}).get("thumbnail")
+    # Extract filename and extension
+    file_name, file_ext = os.path.splitext(message.document.file_name)
 
-    # Download the file temporarily
-    file_path = await message.download()
+    # ✅ Remove unwanted text but KEEP numbers & quality indicators
+    clean_name = re.sub(r"@\S+?|(?!E\d+|[0-9]{3,4}p)[^]*?", "", file_name).strip()
 
-    # Send the renamed file
-    await message.reply_document(
-        document=file_path,
-        file_name=new_filename,
-        thumb=thumb_id,
-        caption=f"✅ File renamed to: **{new_filename}**",
+    # Ensure the filename starts with [@Animes2u]
+    new_filename = f"{DEFAULT_KEYWORD}{clean_name}{file_ext}"
+    new_file_path = os.path.join(os.path.dirname(file_path), new_filename)
+
+    # Rename the file
+    os.rename(file_path, new_file_path)
+
+    try:
+        # Send the renamed file with thumbnail
+        await client.send_document(
+            chat_id=message.chat.id,
+            document=new_file_path,
+            thumb=thumb_path,
+            file_name=new_filename,
+            caption=f"✅ Renamed: {new_filename}",
+        )
+    finally:
+        os.remove(new_file_path)  # Ensure temp file is deleted
+
+# ✅ Start Command
+@bot.on_message(filters.command("start"))
+async def start(client, message):
+    await message.reply_text(
+        "👋 Hello! Send an image with /set_thumb to set a thumbnail, then send a file to rename & apply the thumbnail."
     )
 
-    # Delete the downloaded file to save space
-    os.remove(file_path)
+# ✅ Keep-Alive Function (Prevents Render from stopping the bot)
+async def keep_alive():
+    while True:
+        try:
+            requests.get("https://your-app-name.onrender.com")
+        except Exception as e:
+            print(f"Keep-alive failed: {e}")
+        await asyncio.sleep(120)  # Ping every 2 minutes
+
+# Run Flask in a separate thread
+def run_flask():
+    port = int(os.environ.get("PORT", 8080))
+    print(f"🌍 Starting Flask on port {port}...")
+    web_app.run(host="0.0.0.0", port=port)
+
+# ✅ Start the bot
+async def main():
+    # Start Flask server
+    flask_thread = Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+
+    # Start keep-alive task
+    asyncio.create_task(keep_alive())
+
+    async with bot:
+        print("✅ Bot is online.")
+        await idle()
+
+    print("🛑 Bot stopped.")
 
 # Run the bot
-app.run()
+if __name__ == "__main__":
+    asyncio.run(main())
