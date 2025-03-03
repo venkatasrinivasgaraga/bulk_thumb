@@ -76,7 +76,8 @@ async def rename_file(client, message):
     file_name, file_ext = os.path.splitext(message.document.file_name)
 
     # ✅ Remove unwanted text but KEEP numbers & quality indicators
-    clean_name = re.sub(r"@\S+?|(?!E\d+|[0-9]{3,4}p)[^]*?", "", file_name).strip()
+    clean_name = re.sub(r"@[^]]*?", "", file_name)  
+    clean_name = re.sub(r"(?!E\d+|[0-9]{3,4}p|Dual)[^]*?", "", clean_name).strip()
     new_filename = f"{DEFAULT_KEYWORD}{clean_name}{file_ext}"
     new_file_path = os.path.join(os.path.dirname(file_path), new_filename)
 
