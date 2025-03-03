@@ -16,18 +16,16 @@ os.makedirs(THUMB_DIR, exist_ok=True)
 
 # ✅ Function to clean filename
 def clean_filename(original_name):
-    # Remove specific tags like [@Anime_Artic]
-    original_name = original_name.replace("[@Anime_Artic]", "").strip()
+    # ✅ Remove [@Anime_Artic] or any other tags in square brackets (except E### and ###p)
+    original_name = re.sub(r"@Anime_Artic", "", original_name, flags=re.IGNORECASE)  # Remove [@Anime_Artic]
+    original_name = re.sub(r"(?!E\d{1,4})(?!\d{3,4}p)[^]+", "", original_name)  # Remove all other brackets except E### and ###p
 
-    # Remove anything inside brackets [] (e.g., [Dual], [Fansub])
-    original_name = re.sub(r".*?", "", original_name)
-
-    # Extract only letters, numbers, episode numbers (E###), and quality (480p, 1080p)
-    match = re.findall(r"[a-zA-Z]+|E\d{1,4}|[0-9]{3,4}p", original_name)
+    # ✅ Extract meaningful parts: Title, Episode (E###), Quality (###p)
+    match = re.findall(r"[a-zA-Z]+(?:\s[a-zA-Z]+)*|E\d{1,4}|\d{3,4}p", original_name)
 
     if match:
         clean_name = " ".join(match)  # Join extracted parts with a space
-        return f"[@Animes2u] {clean_name}"  # Add the prefix
+        return f"[@Animes2u] {clean_name}".strip()  # Add prefix
     return f"[@Animes2u] Unknown_File"
 
 # ✅ Command to set a permanent thumbnail
