@@ -40,28 +40,47 @@ async def set_thumbnail(client, message):
 # ✅ File Rename & Thumbnail Change
 @bot.on_message(filters.document)
 async def rename_file(client, message):
-    thumb_path = os.path.join(THUMB_DIR, f"{message.from_user.id}.jpg")
+    print("📩 File received:", message.document.file_name)
+
+    # Check if a file exists in the message
+    if not message.document:
+        print("❌ No document found in message!")
+        await message.reply_text("❌ No document detected.")
+        return
+
+    # Check file size (Telegram limit: 2GB)
+    max_size = 2 * 1024 * 1024 * 1024  # 2GB
+    if message.document.file_size > max_size:
+        print("❌ File is too large!")
+        await message.reply_text("❌ File is too large! (Max: 2GB)")
+        return
 
     # Check if thumbnail exists
+    thumb_path = os.path.join(THUMB_DIR, f"{message.from_user.id}.jpg")
     if not os.path.exists(thumb_path):
+        print("⚠️ No thumbnail found!")
         await message.reply_text("⚠️ No thumbnail found! Use /set_thumb to set one.")
         return
 
     # Download the document
     file_path = await client.download_media(message)
+    
     if not file_path:
+        print("❌ File download failed!")
         await message.reply_text("❌ Failed to download file.")
         return
 
-    # Extract filename and extension
+    print("✅ File downloaded:", file_path)
+
+    # Extract filename & extension
     file_name, file_ext = os.path.splitext(message.document.file_name)
 
     # ✅ Remove unwanted text but KEEP numbers & quality indicators
     clean_name = re.sub(r"@\S+?|(?!E\d+|[0-9]{3,4}p)[^]*?", "", file_name).strip()
-
-    # Ensure the filename starts with [@Animes2u]
     new_filename = f"{DEFAULT_KEYWORD}{clean_name}{file_ext}"
     new_file_path = os.path.join(os.path.dirname(file_path), new_filename)
+
+    print("🔄 Renaming file to:", new_filename)
 
     # Rename the file
     os.rename(file_path, new_file_path)
@@ -75,6 +94,12 @@ async def rename_file(client, message):
             file_name=new_filename,
             caption=f"✅ Renamed: {new_filename}",
         )
+        print("📤 File sent successfully!")
+
+    except Exception as e:
+        print(f"❌ Error sending file: {e}")
+        await message.reply_text(f"❌ Error: {e}")
+
     finally:
         os.remove(new_file_path)  # Ensure temp file is deleted
 
